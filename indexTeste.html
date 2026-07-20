@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notas Premium</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #e2e8f0; border-radius: 10px; }
+        .note-card.active { border-right: 3px solid #6366f1; background-color: #f8fafc; }
+        .modal-overlay { transition: opacity 0.2s ease-in-out; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 h-screen flex overflow-hidden">
+
+    <aside class="w-80 bg-white border-r border-slate-200 flex flex-col h-full shadow-sm z-10">
+        <div class="p-6 border-b border-slate-100">
+            <div class="flex items-center justify-between mb-6">
+                <h1 class="font-bold text-xl text-slate-800 tracking-tight">Notas</h1>
+                <button onclick="createNewNote()" class="p-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition-all active:scale-95">
+                    <i data-lucide="plus" class="w-5 h-5"></i>
+                </button>
+            </div>
+            
+            <div class="relative">
+                <i data-lucide="search" class="absolute left-3 top-2.5 w-4 h-4 text-slate-400"></i>
+                <input type="text" id="search-input" placeholder="Buscar notas..." oninput="renderList()"
+                       class="w-full pl-10 pr-4 py-2 bg-slate-100 border-transparent rounded-lg text-sm focus:outline-none focus:bg-white focus:ring-2 focus:ring-indigo-500/20 transition-all">
+            </div>
+        </div>
+
+        <div id="notes-list" class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-1">
+            <!-- Items rendered by JS -->
+        </div>
+    </aside>
+
+    <main class="flex-1 flex flex-col bg-slate-50 relative">
+        <div id="editor-view" class="h-full flex flex-col max-w-3xl mx-auto w-full p-8 md:p-12">
+            <input type="text" id="note-title" placeholder="Título sem título" 
+                   class="text-4xl font-bold text-slate-800 placeholder-slate-300 w-full mb-6 outline-none bg-transparent">
+            
+            <textarea id="note-content" placeholder="Comece a escrever..." 
+                      class="flex-1 w-full text-slate-600 leading-relaxed text-lg resize-none outline-none bg-transparent placeholder-slate-300"></textarea>
+            
+            <div class="mt-6 flex justify-between items-center text-slate-400">
+                <span id="save-status" class="text-xs font-medium uppercase tracking-wider text-indigo-500">Salvo</span>
+                <button onclick="showDeleteConfirm()" class="flex items-center gap-2 text-red-500/70 hover:text-red-600 transition-colors group">
+                    <i data-lucide="trash-2" class="w-5 h-5"></i>
+                    <span class="text-sm">Excluir Nota</span>
+                </button>
+            </div>
+        </div>
+
+        <div id="empty-state" class="hidden h-full flex flex-col items-center justify-center text-slate-400">
+            <div class="w-16 h-16 bg-white shadow-sm rounded-2xl flex items-center justify-center mb-4 border border-slate-100">
+                <i data-lucide="pen-tool" class="w-8 h-8 text-slate-300"></i>
+            </div>
+            <p class="text-lg font-medium">Nenhuma nota selecionada</p>
+            <p class="text-sm">Crie uma nova nota para começar</p>
+        </div>
+    </main>
+
+    <div id="delete-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onclick="hideDeleteConfirm()"></div>
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 relative animate-in fade-in zoom-in duration-200">
+            <h3 class="text-lg font-semibold text-slate-900">Excluir nota?</h3>
+            <p class="text-slate-500 mt-2 text-sm">Esta ação não pode ser desfeita. Tem certeza de que deseja apagar esta nota permanentemente?</p>
+            <div class="mt-6 flex gap-3">
+                <button onclick="hideDeleteConfirm()" class="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors">Cancelar</button>
+                <button onclick="confirmDelete()" class="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors">Excluir</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let notes = JSON.parse(localStorage.getItem('notes')) || [];
+        let currentNoteId = null;
+
+        const noteTitleEl = document.getElementById('note-title');
+        const noteContentEl = document.getElementById('note-content');
+        const notesListEl = document.getElementById('notes-list');
+        const searchInput = document.getElementById('search-input');
+        const editorView = document.getElementById('editor-view');
+        const emptyState = document.getElementById('empty-state');
+        const saveStatus = document.getElementById('save-status');
+        const deleteModal = document.getElementById('delete-modal');
+
+        function initIcons() { lucide.createIcons(); }
+
+        function renderList() {
+            const searchTerm = searchInput.value.toLowerCase();
+            const filtered = notes.filter(n => 
+                n.title.toLowerCase().includes(searchTerm) || 
+                n.content.toLowerCase().includes(searchTerm)
+            ).sort((a,b) => b.updatedAt - a.updatedAt);
+
+            notesListEl.innerHTML = '';
+            filtered.forEach(note => {
+                const div = document.createElement('div');
+                div.className = `group note-card p-4 rounded-xl cursor-pointer transition-all duration-200 flex items-center justify-between ${currentNoteId === note.id ? 'active' : 'hover:bg-slate-100'}`;
+                
+                div.innerHTML = `
+                    <div class="flex-1 min-w-0" onclick="loadNote(${note.id})">
+                        <div class="font-semibold text-slate-700 truncate">${note.title || 'Sem título'}</div>
+                        <div class="text-xs text-slate-400 truncate mt-1">${note.content.substring(0, 30) || '...'}</div>
+                    </div>
+                    <button onclick="event.stopPropagation(); currentNoteId = ${note.id}; showDeleteConfirm();" 
+                            class="ml-2 opacity-0 group-hover:opacity-100 p-2 text-slate-300 hover:text-red-500 transition-all">
+                        <i data-lucide="trash-2" class="w-4 h-4"></i>
+                    </button>
+                `;
+                notesListEl.appendChild(div);
+            });
+            initIcons();
+        }
+
+        function createNewNote() {
+            const newNote = { id: Date.now(), title: '', content: '', updatedAt: Date.now() };
+            notes.unshift(newNote);
+            saveData();
+            loadNote(newNote.id);
+        }
+
+        function loadNote(id) {
+            currentNoteId = id;
+            const note = notes.find(n => n.id === id);
+            if (note) {
+                noteTitleEl.value = note.title;
+                noteContentEl.value = note.content;
+                editorView.classList.remove('hidden');
+                emptyState.classList.add('hidden');
+            }
+            renderList();
+        }
+
+        function saveData() {
+            localStorage.setItem('notes', JSON.stringify(notes));
+            renderList();
+            saveStatus.innerText = 'Salvo';
+            setTimeout(() => saveStatus.innerText = 'Salvo', 2000);
+        }
+
+        [noteTitleEl, noteContentEl].forEach(el => {
+            el.addEventListener('input', () => {
+                if (!currentNoteId) return;
+                const note = notes.find(n => n.id === currentNoteId);
+                if (note) {
+                    note.title = noteTitleEl.value;
+                    note.content = noteContentEl.value;
+                    note.updatedAt = Date.now();
+                    saveStatus.innerText = 'Salvando...';
+                    saveData();
+                }
+            });
+        });
+
+        function showDeleteConfirm() {
+            if (!currentNoteId) return;
+            deleteModal.classList.remove('hidden');
+        }
+
+        function hideDeleteConfirm() {
+            deleteModal.classList.add('hidden');
+        }
+
+        function confirmDelete() {
+            if (!currentNoteId) return;
+            notes = notes.filter(n => n.id !== currentNoteId);
+            currentNoteId = null;
+            saveData();
+            hideDeleteConfirm();
+            editorView.classList.add('hidden');
+            emptyState.classList.remove('hidden');
+        }
+
+        // Initial setup
+        if (notes.length > 0) loadNote(notes[0].id);
+        else { editorView.classList.add('hidden'); emptyState.classList.remove('hidden'); }
+        initIcons();
+    </script>
+</body>
+</html>
